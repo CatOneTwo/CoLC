@@ -1,0 +1,171 @@
+name: v2xsim_point_pillar_lidar_colc_vqvae
+root_dir: "dataset/v2xsim2_info/v2xsim_infos_train.pkl"
+validate_dir: "dataset/v2xsim2_info/v2xsim_infos_val.pkl"
+test_dir: "dataset/v2xsim2_info/v2xsim_infos_test.pkl"
+
+noise_setting:
+  add_noise: True
+  args: 
+    pos_std: 0.2
+    rot_std: 0.2
+    pos_mean: 0
+    rot_mean: 0
+
+yaml_parser: "load_point_pillar_params"
+train_params:
+  batch_size: &batch_size 8
+  epoches: &epoches 40
+  eval_freq: 1
+  save_freq: 1
+  max_cav: &max_cav 5
+
+input_source: ['lidar']
+label_type: 'lidar'
+
+comm_range: 50
+
+fusion:
+  core_method: 'earlykd' 
+  dataset: 'v2xsim'
+  args: 
+    proj_first: true
+    # cav_lidar_sample:
+    #   method: FAPS
+    #   fg_ratio: 0.2 
+    #   bg_ratio: 0.1
+    cav_lidar_sample:
+      method: RS
+      ratio: 0.1 
+    
+
+
+# preprocess-related
+preprocess:
+  # options: BasePreprocessor, VoxelPreprocessor, BevPreprocessor
+  core_method: 'SpVoxelPreprocessor'
+  args:
+    voxel_size: &voxel_size [0.4, 0.4, 5]
+    max_points_per_voxel: &max_points_per_voxel 32
+    max_voxel_train: 32000
+    max_voxel_test: 70000
+  # lidar range for each individual cav.
+  cav_lidar_range: &cav_lidar [-32, -32, -3, 32, 32, 2]
+
+data_augment:
+  - NAME: random_world_flip
+    ALONG_AXIS_LIST: [ 'x' ]
+
+  - NAME: random_world_rotation
+    WORLD_ROT_ANGLE: [ -0.78539816, 0.78539816 ]
+
+  - NAME: random_world_scaling
+    WORLD_SCALE_RANGE: [ 0.95, 1.05 ]
+
+# anchor box related
+postprocess:
+  core_method: 'VoxelPostprocessor' # VoxelPostprocessor, BevPostprocessor supported
+  gt_range: *cav_lidar
+  anchor_args:
+    cav_lidar_range: *cav_lidar
+    l: 3.9
+    w: 1.6
+    h: 1.56
+    r: &anchor_yaw [0, 90]
+    feature_stride: 2
+    num: &anchor_num 2
+  target_args:
+    pos_threshold: 0.6
+    neg_threshold: 0.45
+    score_threshold: 0.20
+  order: 'hwl' # hwl or lwh
+  max_num: 100 # maximum number of objects in a single frame. use this number to make sure different frames has the same dimension in the same batch
+  nms_thresh: 0.15
+  dir_args: &dir_args
+    dir_offset: 0.7853
+    num_bins: 2
+    anchor_yaw: *anchor_yaw
+
+# model related
+model:
+  core_method: point_pillar_colc_baseline
+  args: &model_args
+    voxel_size: *voxel_size
+    lidar_range: *cav_lidar
+    anchor_number: *anchor_num
+    
+    model_type: 'codebook_training' 
+    
+    vqvae:
+      # perceptual_loss: True
+      rec_mode: 's2d'
+      vector_quantizer:
+        n_e: 512
+        e_dim: &codebook_dim 512
+        beta: 0.25
+        cosine_similarity: False
+        dead_limit: 128
+      
+      lidar_encoder:
+        img_size: &img_size [160, 160]
+        patch_size: &patch_size 4
+        in_chans: &in_chans 64
+        embed_dim: &embed_dim 256
+        num_heads: &num_heads 16
+        depth: &depth 6 #12 
+        codebook_dim: *codebook_dim
+        window_size: &window_size 4
+
+      lidar_decoder:
+        img_size: *img_size
+        num_patches: 1600 # (img_size[0]/patch_size)* (img_size[1]/patch_size)
+        patch_size: *patch_size
+        in_chans: *in_chans
+        embed_dim: *embed_dim
+        num_heads: *num_heads
+        depth: *depth
+        codebook_dim: *codebook_dim
+        window_size: *window_size
+
+    pillar_vfe:
+      use_norm: true
+      with_distance: false
+      use_absolute_xyz: true
+      num_filters: [64]
+    point_pillar_scatter:
+      num_features: 64
+      max_points_per_voxel: *max_points_per_voxel
+          
+    base_bev_backbone: # backbone will downsample 2x
+      layer_nums: [3, 5, 8]
+      layer_strides: [2, 2, 2]
+      num_filters: [64, 128, 256]
+      upsample_strides: [1, 2, 4]
+      num_upsample_filter: [128, 128, 128]
+
+    shrink_header:
+      kernal_size: [ 3 ]
+      stride: [ 1 ]
+      padding: [ 1 ]
+      dim: [ 256 ]
+      input_dim: 384 # 128 * 3
+
+    dir_args: *dir_args
+
+
+loss:
+  core_method: colc_vqvae_loss
+  args:
+    
+optimizer:
+  core_method: AdamW
+  lr: 8e-4
+  args:
+    weight_decay: 1e-4
+
+lr_scheduler:
+  core_method: cosineannealwarm # step, multistep, exponential and cosineannealwarm support
+  epoches: *epoches
+  warmup_lr: 2e-5
+  warmup_epoches: 10
+  lr_min: 5e-6
+
