@@ -3,16 +3,12 @@ DATASET=v2xsim
 SETTING=lidar_only_with_noise
 
 
-# 1. Prepare early fusion and no fusion model
+# 1. Prepare early fusion model
 ########## Model prepare ##########
 
 # CUDA_VISIBLE_DEVICES=0 python opencood/tools/train.py \
 # -y opencood/hypes_yaml/${DATASET}/${SETTING}/pointpillar_early.yaml \
 # --fusion_method early
-
-# CUDA_VISIBLE_DEVICES=0 python opencood/tools/train.py \
-# -y opencood/hypes_yaml/${DATASET}/${SETTING}/pointpillar_single.yaml \
-# --fusion_method no
 
 ########## Model prepare ##########
 
@@ -44,7 +40,7 @@ CUDA_VISIBLE_DEVICES=0 python opencood/tools/train.py \
 # CUDA_VISIBLE_DEVICES=0 python opencood/tools/train_colc_ga.py \
 # -y opencood/hypes_yaml/${DATASET}/${SETTING}/pointpillar_colc_kd.yaml \
 # --fusion_method cecooper \
-# --nei_model opencood/logs/${DATASET}_point_pillar_lidar_late \ 
+# --nei_model opencood/logs/${DATASET}_pointnet_lidar_seg_early \ 
 # --pretrained_model opencood/logs/${DATASET}_point_pillar_lidar_early \
 # --vqvae_model opencood/logs/$completion_model_path$ 
 ########## CoLC ##########
